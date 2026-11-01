@@ -1,0 +1,25 @@
+# ==============================================================================
+# Static MAC/IP to Hostname Mapping Table
+# Location: /etc/buffalo-dhcp-dns/hosts.map
+#
+# Syntax:
+#   <MAC_or_IP>    <Hostname>    [Description / Comment]
+#
+# Notes:
+#   - MAC addresses can be formatted with colons (aa:bb:cc:dd:ee:ff),
+#     hyphens (aa-bb-cc-dd-ee-ff), or plain 12 hex chars.
+#   - Hostnames must follow standard DNS label rules (a-z, 0-9, hyphens).
+#   - Empty lines and lines starting with '#' are ignored.
+# ==============================================================================
+
+# Examples:
+# VLAN 20 devices
+00:11:22:33:44:01    reception-pc01     # Front reception counter
+00:11:22:33:44:02    meeting-display    # 2F Meeting Room A display
+
+# VLAN 100 devices
+00:11:22:33:44:03    guest-kiosk-01     # Entrance iPad Kiosk
+
+# By static reservation IP (if preferred over MAC):
+# 192.168.20.150     lab-printer-color
+

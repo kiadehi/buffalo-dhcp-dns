@@ -1,0 +1,41 @@
+# ==============================================================================
+# Git Ignore Configuration for buffalo-dhcp-dns
+# ==============================================================================
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+
+# Security & Credentials (Never commit active configuration or secrets!)
+config.ini
+hosts.map
+*.keytab
+*.key
+*.pem
+*.pfx
+*.env
+*.env.*
+secrets.json
+
+# Keep example templates tracked
+!config.ini.example
+!hosts.map.example
+
+# Runtime state, cache and locks
+*.log
+*.lock
+state.json
+leases_state.json
+
+# OS and Editor artifacts
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+

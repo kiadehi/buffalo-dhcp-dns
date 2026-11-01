@@ -1,0 +1,22 @@
+[Unit]
+Description=BUFFALO BS-G3024MR DHCP to Samba AD DNS Synchronizer
+After=network.target samba-ad-dc.service
+Wants=network.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/local/bin/sync_dhcp_dns.py --config /etc/buffalo-dhcp-dns/config.ini
+StandardOutput=journal
+StandardError=journal
+
+# Security sandbox hardening options
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/buffalo-dhcp-dns /var/log/buffalo-dhcp-dns /run/lock /tmp
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+

@@ -1,0 +1,15 @@
+[Unit]
+Description=Periodic BUFFALO DHCP to Samba DNS Synchronization Timer
+After=samba-ad-dc.service
+
+[Timer]
+# Run 1 minute after boot
+OnBootSec=1min
+# Trigger periodically every 3 minutes
+OnUnitActiveSec=3min
+# If system was powered down when timer was supposed to trigger, run immediately upon startup
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+

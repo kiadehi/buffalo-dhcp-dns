@@ -1,0 +1,102 @@
+# ==============================================================================
+# Configuration file for BUFFALO BS-G3024MR DHCP to Samba AD DNS Synchronizer
+# Location: /etc/buffalo-dhcp-dns/config.ini (Permission recommended: 600)
+# ==============================================================================
+
+[switch]
+# IP address or hostname of the BUFFALO BS-G3024MR switch
+host = 192.168.1.254
+
+# Telnet port (default: 23)
+port = 23
+
+# Switch login credentials
+user = admin
+password = SwitchAdminPasswordHere
+
+# Enable password (leave empty if enable does not require a secondary password)
+enable_password =
+
+# Prompt prefix string configured on switch (default: BS-G3024MR)
+prompt = BS-G3024MR
+
+# Telnet command timeout in seconds
+timeout = 15
+
+# Path to the expect automation script
+expect_script = /usr/local/bin/buffalo_fetch_dhcp.exp
+
+
+[samba]
+# Samba AD Domain Controller IP or hostname (127.0.0.1 if running on the DC itself)
+server = 127.0.0.1
+
+# Active Directory Forward DNS Zone name
+domain_zone = ad.corp.example.com
+
+# Authentication method: 'kerberos' or 'credentials'
+# - 'kerberos': uses Kerberos ticket cache or keytab file (recommended for security)
+# - 'credentials': uses user and password with samba-tool -U
+auth_method = kerberos
+
+# Samba AD Administrator username (used with 'credentials' or as default principal)
+user = Administrator
+
+# Password (used ONLY when auth_method = credentials)
+password = 
+
+# Path to Kerberos Keytab file (used when auth_method = kerberos)
+keytab_path = /etc/krb5.keytab
+
+# Principal name in keytab (optional, defaults to Administrator@REALM)
+krb5_principal = Administrator@AD.CORP.EXAMPLE.COM
+
+# Automatically create and delete reverse DNS (PTR) records
+sync_ptr = true
+
+
+[reverse_zones]
+# Subnet prefix (first 3 octets) to Reverse DNS Zone mappings
+192.168.20 = 20.168.192.in-addr.arpa
+192.168.30 = 30.168.192.in-addr.arpa
+192.168.100 = 100.168.192.in-addr.arpa
+
+
+[vlan_pools]
+# Target DHCP IP pools managed by the switch.
+# Format: <Start_IP> - <End_IP> or <CIDR>
+# Leases outside these ranges will be safely ignored.
+vlan20 = 192.168.20.100 - 192.168.20.200
+vlan30 = 192.168.30.100 - 192.168.30.200
+vlan100 = 192.168.100.100 - 192.168.100.200
+
+
+[hostname]
+# Path to static MAC/IP-to-hostname mapping file (optional)
+hosts_map_file = /etc/buffalo-dhcp-dns/hosts.map
+
+# Enable dynamic NetBIOS client name lookup using 'nmblookup -A <IP>'
+# Useful in Windows/Samba environments if clients respond to NetBIOS query
+enable_netbios = false
+
+# Hostname generation template when MAC/IP is not mapped:
+# Available variables:
+#   {mac_clean}   : e.g. 001122334401
+#   {mac_dashed}  : e.g. 00-11-22-33-44-01
+#   {ip_dashed}   : e.g. 192-168-20-102
+#   {vlan}        : e.g. 20 (third octet)
+#   {last_octet}  : e.g. 102 (fourth octet)
+# Examples:
+#   dhcp-{mac_clean}        -> dhcp-001122334401
+#   dhcp-vlan{vlan}-{last_octet} -> dhcp-vlan20-102
+#   host-{ip_dashed}        -> host-192-168-20-102
+template = dhcp-{mac_clean}
+
+
+[storage]
+# State file path to track registered leases between sync cycles
+state_file = /var/lib/buffalo-dhcp-dns/state.json
+
+# Lock file path to prevent overlapping execution
+lock_file = /run/lock/buffalo-dhcp-dns.lock
+
