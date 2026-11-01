@@ -3,27 +3,17 @@
 # Script: buffalo_fetch_dhcp.exp
 # Description: Automate Telnet interaction with BUFFALO BS-G3024MR L3 switch
 #              to retrieve active DHCP binding table.
-#
-# Handshake Steps:
-#   1. Connect via Telnet to BS-G3024MR
-#   2. Authenticate (login: / username: -> password:)
-#   3. Bypass curses "Main Menu" by sending 'n\r' (Command Line Interface)
-#   4. Check prompt:
-#        - If '>' (user mode), send 'enable' (and enable password if prompted)
-#        - If '#' (privileged mode), proceed
-#   5. Disable paging with 'terminal length 0'
-#   6. Execute 'show ip dhcp binding' and capture output buffer
-#   7. Disconnect cleanly with 'exit'
 # ==============================================================================
 
 # Default parameters
-set switch_host       [expr {[info exists env(SWITCH_HOST)] ? $env(SWITCH_HOST) : ""}]
-set switch_user       [expr {[info exists env(SWITCH_USER)] ? $env(SWITCH_USER) : "admin"}]
-set switch_pass       [expr {[info exists env(SWITCH_PASS)] ? $env(SWITCH_PASS) : ""}]
-set switch_port       [expr {[info exists env(SWITCH_PORT)] ? $env(SWITCH_PORT) : "23"}]
+set switch_host        [expr {[info exists env(SWITCH_HOST)] ? $env(SWITCH_HOST) : ""}]
+set switch_user        [expr {[info exists env(SWITCH_USER)] ? $env(SWITCH_USER) : "admin"}]
+set switch_pass        [expr {[info exists env(SWITCH_PASS)] ? $env(SWITCH_PASS) : ""}]
+set switch_port        [expr {[info exists env(SWITCH_PORT)] ? $env(SWITCH_PORT) : "23"}]
 set switch_enable_pass [expr {[info exists env(SWITCH_ENABLE_PASS)] ? $env(SWITCH_ENABLE_PASS) : ""}]
-set prompt_str        [expr {[info exists env(SWITCH_PROMPT)] ? $env(SWITCH_PROMPT) : "BS-G3024MR"}]
-set timeout_sec       [expr {[info exists env(SWITCH_TIMEOUT)] ? $env(SWITCH_TIMEOUT) : 15}]
+set prompt_str         [expr {[info exists env(SWITCH_PROMPT)] ? $env(SWITCH_PROMPT) : "BS-G3024MR"}]
+set timeout_sec        [expr {[info exists env(SWITCH_TIMEOUT)] ? $env(SWITCH_TIMEOUT) : 20}]
+set switch_debug       [expr {[info exists env(SWITCH_DEBUG)] ? $env(SWITCH_DEBUG) : "0"}]
 
 # Command-line argument override:
 #   ./buffalo_fetch_dhcp.exp <host> <user> <pass> [port] [enable_pass] [prompt] [timeout]
@@ -41,13 +31,26 @@ if {$switch_host eq ""} {
     exit 2
 }
 
-# Construct prompt patterns
+# If enable_pass is not set, fallback to switch_pass if needed
+if {$switch_enable_pass eq ""} {
+    set switch_enable_pass $switch_pass
+}
+
+# Prompt regex patterns (supports custom hostname or default BS-G3024MR)
 set prompt_user "${prompt_str}>"
 set prompt_priv "${prompt_str}#"
 
-# Suppress interactive echo to stdout to keep data stream clean
 log_user 0
 set timeout $timeout_sec
+
+proc log_debug {msg} {
+    global switch_debug
+    if {$switch_debug eq "1"} {
+        puts stderr "\[EXPECT DEBUG\] $msg"
+    }
+}
+
+log_debug "Starting Telnet session to ${switch_host}:${switch_port} (timeout=${timeout_sec}s)..."
 
 # Spawn Telnet session
 if {[catch {spawn telnet $switch_host $switch_port} reason]} {
@@ -55,48 +58,94 @@ if {[catch {spawn telnet $switch_host $switch_port} reason]} {
     exit 3
 }
 
+# Send initial CR to wake up switch console (many switches wait for Enter before showing prompt)
+sleep 0.5
+log_debug "Sending initial CR to prompt switch..."
+send "\r"
+
 set authenticated 0
-set in_cli 0
+set sent_menu_n 0
 set in_privileged 0
+set login_sent 0
+set pass_sent 0
 
 # Step 1-4: Login, Curses Menu bypass, and Privileged Mode transition
 expect {
-    -nocase -re "(username|login):\\s*$" {
-        send -- "$switch_user\r"
+    # Match various username prompts: "Username:", "User Name:", "login:", "Login:"
+    -nocase -re "(user\\s*name|username|login):\\s*" {
+        log_debug "Matched login prompt. Sending username: $switch_user"
+        if {!$login_sent} {
+            send -- "$switch_user\r"
+            set login_sent 1
+        }
         exp_continue
     }
-    -nocase -re "password:\\s*$" {
-        if {!$authenticated} {
+    # Match password prompt
+    -nocase -re "password:\\s*" {
+        log_debug "Matched password prompt."
+        if {!$pass_sent} {
+            log_debug "Sending switch password..."
             send -- "$switch_pass\r"
+            set pass_sent 1
             set authenticated 1
         } else {
-            # Enable password prompt
+            log_debug "Sending enable password..."
             send -- "$switch_enable_pass\r"
         }
         exp_continue
     }
     # Curses Main Menu detection (send 'n' to enter CLI)
-    -nocase -re "(main menu|command line|command line interface|choice|selection)" {
-        send -- "n\r"
+    -nocase -re {(main\s*menu|command\s*line|choice|selection|select|option|\[n\])} {
+        log_debug "Detected curses Main Menu. Sending 'n' to enter CLI..."
+        if {!$sent_menu_n} {
+            send -- "n\r"
+            set sent_menu_n 1
+        }
         exp_continue
     }
-    # User Mode Prompt (escalate to Privileged Mode)
+    # User Mode Prompt: escalate to Privileged Mode
     -re "$prompt_user" {
+        log_debug "Matched user mode prompt ($prompt_user). Sending 'enable'..."
         send -- "enable\r"
         exp_continue
     }
     # Privileged Mode Prompt reached
     -re "$prompt_priv" {
+        log_debug "Privileged mode prompt reached ($prompt_priv)."
+        set in_privileged 1
+    }
+    # Fallback for generic user/privileged prompt if hostname was customized
+    -re {([a-zA-Z0-9_.-]+)>} {
+        log_debug "Matched generic user prompt ($expect_out(1,string)>). Sending 'enable'..."
+        send -- "enable\r"
+        exp_continue
+    }
+    -re {([a-zA-Z0-9_.-]+)#} {
+        log_debug "Matched generic privileged prompt ($expect_out(1,string)#)."
         set in_privileged 1
     }
     timeout {
         puts stderr "Timeout waiting for switch response during login / menu navigation."
+        puts stderr "--- Diagnostic buffer received before timeout ---"
+        if {[info exists expect_out(buffer)]} {
+            puts stderr "$expect_out(buffer)"
+        } else {
+            puts stderr "(No buffer captured)"
+        }
+        puts stderr "------------------------------------------------"
         catch {close}
         catch {wait}
         exit 4
     }
     eof {
         puts stderr "Connection closed unexpectedly by switch during login / menu navigation."
+        puts stderr "--- Diagnostic buffer received before EOF ---"
+        if {[info exists expect_out(buffer)]} {
+            puts stderr "$expect_out(buffer)"
+        } else {
+            puts stderr "(No buffer captured)"
+        }
+        puts stderr "--------------------------------------------"
         catch {wait}
         exit 5
     }
@@ -110,13 +159,20 @@ if {!$in_privileged} {
 }
 
 # Step 5: Disable paging to ensure output is not interrupted by --More--
+log_debug "Sending 'terminal length 0'..."
 send -- "terminal length 0\r"
 expect {
     -re "$prompt_priv" {
-        # Successfully accepted
+        log_debug "Paging disabled successfully."
+    }
+    -re {([a-zA-Z0-9_.-]+)#} {
+        log_debug "Paging disabled successfully (matched generic prompt)."
     }
     timeout {
         puts stderr "Timeout waiting after sending 'terminal length 0'."
+        if {[info exists expect_out(buffer)]} {
+            puts stderr "$expect_out(buffer)"
+        }
         catch {close}
         catch {wait}
         exit 7
@@ -129,6 +185,7 @@ expect {
 }
 
 # Step 6: Execute 'show ip dhcp binding'
+log_debug "Executing 'show ip dhcp binding'..."
 send -- "show ip dhcp binding\r"
 
 set binding_output ""
@@ -139,8 +196,14 @@ expect {
     -re "$prompt_priv" {
         set binding_output $expect_out(buffer)
     }
+    -re {([a-zA-Z0-9_.-]+)#} {
+        set binding_output $expect_out(buffer)
+    }
     timeout {
         puts stderr "Timeout waiting for 'show ip dhcp binding' output."
+        if {[info exists expect_out(buffer)]} {
+            puts stderr "$expect_out(buffer)"
+        }
         catch {close}
         catch {wait}
         exit 9
@@ -152,7 +215,10 @@ expect {
     }
 }
 
+log_debug "Successfully received binding output ([string length $binding_output] bytes)."
+
 # Step 7: Disconnect gracefully
+log_debug "Disconnecting cleanly with 'exit'..."
 send -- "exit\r"
 expect {
     eof {}
@@ -163,4 +229,3 @@ catch {wait}
 # Output captured binding data to standard output
 puts -nonewline "$binding_output"
 exit 0
-

@@ -562,7 +562,24 @@ class BuffaloDHCPSyncApp:
             str(self.switch_timeout),
         ]
         logger.info("Connecting to BS-G3024MR at %s:%d via Telnet...", self.switch_host, self.switch_port)
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=self.switch_timeout + 10)
+        env = os.environ.copy()
+        if logger.isEnabledFor(logging.DEBUG):
+            env["SWITCH_DEBUG"] = "1"
+
+        res = subprocess.run(
+            cmd,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=self.switch_timeout + 15,
+        )
+        if res.stderr:
+            for err_line in res.stderr.splitlines():
+                if err_line.startswith("[EXPECT DEBUG]"):
+                    logger.debug("%s", err_line)
+                elif res.returncode != 0:
+                    logger.error("%s", err_line)
+
         if res.returncode != 0:
             raise RuntimeError(
                 f"Expect script failed with return code {res.returncode}:\n{res.stderr.strip()}"
