@@ -58,11 +58,6 @@ if {[catch {spawn telnet $switch_host $switch_port} reason]} {
     exit 3
 }
 
-# Send initial CR to wake up switch console (many switches wait for Enter before showing prompt)
-sleep 0.5
-log_debug "Sending initial CR to prompt switch..."
-send "\r"
-
 set authenticated 0
 set sent_menu_n 0
 set in_privileged 0
@@ -73,6 +68,12 @@ set pass_sent 0
 expect {
     # Match various username prompts: "Username:", "User Name:", "login:", "Login:"
     -nocase -re "(user\\s*name|username|login):\\s*" {
+        if {$pass_sent} {
+            puts stderr "Authentication failed: Switch rejected credentials (re-prompted for login)."
+            catch {close}
+            catch {wait}
+            exit 11
+        }
         log_debug "Matched login prompt. Sending username: $switch_user"
         if {!$login_sent} {
             send -- "$switch_user\r"
