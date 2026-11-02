@@ -36,9 +36,9 @@ if {$switch_enable_pass eq ""} {
     set switch_enable_pass $switch_pass
 }
 
-# Prompt regex patterns (supports custom hostname or default BS-G3024MR)
 set prompt_user "${prompt_str}>"
 set prompt_priv "${prompt_str}#"
+set real_prompt "$prompt_priv"
 
 log_user 0
 set timeout $timeout_sec
@@ -95,34 +95,36 @@ expect {
         }
         exp_continue
     }
-    # Curses Main Menu detection (send 'n' to enter CLI)
+    # Curses Main Menu detection (send 'n' once to enter CLI)
     -nocase -re {(main\s*menu|command\s*line|choice|selection|select|option|\[n\])} {
-        log_debug "Detected curses Main Menu. Sending 'n' to enter CLI..."
         if {!$sent_menu_n} {
+            log_debug "Detected curses Main Menu. Sending 'n' to enter CLI..."
             send -- "n\r"
             set sent_menu_n 1
         }
         exp_continue
     }
-    # User Mode Prompt: escalate to Privileged Mode
+    # User Mode Prompt (must be at start of line, avoiding <Tab>, <Ctrl-L>, <Enter> menu hints)
     -re "$prompt_user" {
         log_debug "Matched user mode prompt ($prompt_user). Sending 'enable'..."
         send -- "enable\r"
         exp_continue
     }
-    # Privileged Mode Prompt reached
-    -re "$prompt_priv" {
-        log_debug "Privileged mode prompt reached ($prompt_priv)."
-        set in_privileged 1
-    }
-    # Fallback for generic user/privileged prompt if hostname was customized
-    -re {([a-zA-Z0-9_.-]+)>} {
-        log_debug "Matched generic user prompt ($expect_out(1,string)>). Sending 'enable'..."
+    -re {(?:\r\n|\r|\n|^)\s*(BS[0-9A-Fa-f]{12}|BS-G3024MR|[a-zA-Z0-9_.-]+)>\s*$} {
+        set detected_name $expect_out(1,string)
+        log_debug "Matched generic user prompt (${detected_name}>). Sending 'enable'..."
         send -- "enable\r"
         exp_continue
     }
-    -re {([a-zA-Z0-9_.-]+)#} {
-        log_debug "Matched generic privileged prompt ($expect_out(1,string)#)."
+    # Privileged Mode Prompt reached
+    -re "$prompt_priv" {
+        set real_prompt "$prompt_priv"
+        log_debug "Privileged mode prompt reached ($real_prompt)."
+        set in_privileged 1
+    }
+    -re {(?:\r\n|\r|\n|^)\s*(BS[0-9A-Fa-f]{12}|BS-G3024MR|[a-zA-Z0-9_.-]+)#\s*$} {
+        set real_prompt "$expect_out(1,string)#"
+        log_debug "Matched generic privileged prompt ($real_prompt)."
         set in_privileged 1
     }
     timeout {
@@ -153,7 +155,7 @@ expect {
 }
 
 if {!$in_privileged} {
-    puts stderr "Failed to reach privileged prompt (${prompt_priv})."
+    puts stderr "Failed to reach privileged prompt (${real_prompt})."
     catch {close}
     catch {wait}
     exit 6
@@ -163,11 +165,8 @@ if {!$in_privileged} {
 log_debug "Sending 'terminal length 0'..."
 send -- "terminal length 0\r"
 expect {
-    -re "$prompt_priv" {
+    -re "$real_prompt" {
         log_debug "Paging disabled successfully."
-    }
-    -re {([a-zA-Z0-9_.-]+)#} {
-        log_debug "Paging disabled successfully (matched generic prompt)."
     }
     timeout {
         puts stderr "Timeout waiting after sending 'terminal length 0'."
@@ -191,13 +190,10 @@ send -- "show ip dhcp binding\r"
 
 set binding_output ""
 expect {
-    -re "show ip dhcp binding\[\r\n\]+(.*)$prompt_priv" {
+    -re "show ip dhcp binding\[\r\n\]+(.*)$real_prompt" {
         set binding_output $expect_out(1,string)
     }
-    -re "$prompt_priv" {
-        set binding_output $expect_out(buffer)
-    }
-    -re {([a-zA-Z0-9_.-]+)#} {
+    -re "$real_prompt" {
         set binding_output $expect_out(buffer)
     }
     timeout {

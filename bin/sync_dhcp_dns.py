@@ -596,6 +596,7 @@ class BuffaloDHCPSyncApp:
 
     def parse_bindings(self, raw_output: str) -> List[DHCPLease]:
         """Parses the output of 'show ip dhcp binding' into a list of DHCPLease objects."""
+        logger.debug("Raw switch binding output (%d bytes):\n%s", len(raw_output), raw_output)
         leases: List[DHCPLease] = []
         for match in DHCP_LINE_PATTERN.finditer(raw_output):
             data = match.groupdict()
@@ -603,6 +604,14 @@ class BuffaloDHCPSyncApp:
             leases.append(lease)
 
         logger.info("Extracted %d DHCP lease entries from switch output.", len(leases))
+        if len(leases) == 0:
+            if len(raw_output.strip()) > 0:
+                logger.warning(
+                    "0 DHCP leases extracted from switch output. Raw buffer was:\n%s",
+                    raw_output.strip(),
+                )
+            else:
+                logger.warning("Switch returned an empty response buffer for 'show ip dhcp binding'.")
         return leases
 
     def sync(self) -> Tuple[int, int, int]:

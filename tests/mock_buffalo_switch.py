@@ -66,6 +66,7 @@ class MockBSG3024MRServer:
                 b"   [2] Port Configuration\r\n"
                 b"   [N] Command Line Interface\r\n"
                 b"----------------------------------------------------\r\n"
+                b"<Tab> Move, <Ctrl-L> Redraw, <Ctrl-W> Save, <Enter> Select\r\n"
                 b"Enter Choice: "
             )
             choice = conn.recv(1024)
