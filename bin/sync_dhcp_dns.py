@@ -21,6 +21,7 @@ import logging
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 from typing import Dict, List, Optional, Set, Tuple
@@ -235,28 +236,83 @@ class SambaDNSManager:
         self.dry_run = dry_run
         self.samba_tool_bin = shutil.which("samba-tool") or "/usr/bin/samba-tool"
 
-    def _ensure_kerberos(self) -> None:
-        """If keytab is provided, ensures valid Kerberos ticket via kinit."""
-        if self.auth_method != "kerberos" or not self.keytab_path:
-            return
+        # If server is numeric 127.0.0.1 or ::1, resolve to local hostname or DC FQDN
+        # because Kerberos SPN and RPC binding reject numeric IP addresses with NT_STATUS_INVALID_PARAMETER.
+        if self.server in ("127.0.0.1", "::1"):
+            local_host = socket.gethostname()
+            logger.warning(
+                "Samba server is set to '%s'. Kerberos/RPC authentication fails on numeric IP addresses (NT_STATUS_INVALID_PARAMETER). "
+                "Automatically using local hostname '%s'. (Ensure 'server = %s' or DC FQDN is configured in config.ini)",
+                self.server,
+                local_host,
+                local_host,
+            )
+            self.server = local_host
 
-        principal = self.krb5_principal or f"{self.samba_user or 'Administrator'}@{self.domain_zone.upper()}"
-        logger.debug("Refreshing Kerberos ticket with keytab %s for %s", self.keytab_path, principal)
+    def _detect_kerberos_flag(self) -> List[str]:
+        """Detects whether samba-tool supports modern --use-kerberos=required or legacy -k yes."""
+        if hasattr(self, "_cached_kerberos_flag"):
+            return self._cached_kerberos_flag
+
+        flag = ["-k", "yes"]
         try:
-            subprocess.run(
-                ["kinit", "-k", "-t", self.keytab_path, principal],
-                check=True,
+            res = subprocess.run(
+                [self.samba_tool_bin, "dns", "add", "--help"],
                 capture_output=True,
                 text=True,
+                timeout=5,
             )
-        except Exception as e:
-            logger.error("Failed to run kinit: %s", e)
+            if "--use-kerberos" in res.stdout or "--use-kerberos" in res.stderr:
+                flag = ["--use-kerberos=required"]
+        except Exception:
+            pass
+
+        self._cached_kerberos_flag = flag
+        return flag
+
+    def _ensure_kerberos(self) -> None:
+        """If keytab is provided, ensures valid Kerberos ticket via kinit."""
+        if self.auth_method.lower().strip() != "kerberos":
+            return
+
+        if self.keytab_path and os.path.isfile(self.keytab_path):
+            principal = (
+                self.krb5_principal
+                or f"{self.samba_user or 'Administrator'}@{self.domain_zone.upper()}"
+            )
+            logger.debug(
+                "Refreshing Kerberos ticket with keytab %s for %s", self.keytab_path, principal
+            )
+            try:
+                subprocess.run(
+                    ["kinit", "-k", "-t", self.keytab_path, principal],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            except Exception as e:
+                logger.error("Failed to run kinit: %s", e)
+        else:
+            try:
+                res = subprocess.run(["klist", "-s"], capture_output=True, timeout=5)
+                if res.returncode != 0:
+                    logger.warning(
+                        "No active Kerberos ticket found in cache (klist -s returned %d). "
+                        "Please run 'kinit' or configure 'keytab_path' in config.ini, "
+                        "or set 'auth_method = machine_account' (recommended for Samba DC) / 'auth_method = credentials'.",
+                        res.returncode,
+                    )
+            except Exception:
+                pass
 
     def _get_auth_args(self) -> List[str]:
-        if self.auth_method == "kerberos":
+        method = self.auth_method.lower().strip()
+        if method == "kerberos":
             self._ensure_kerberos()
-            return ["-k", "yes"]
-        elif self.auth_method == "credentials":
+            return self._detect_kerberos_flag()
+        elif method in ("machine_account", "machine", "local", "-p"):
+            return ["-P"]
+        elif method == "credentials":
             if not self.samba_user:
                 raise ValueError("samba_user is required for credentials auth")
             cred = f"{self.samba_user}%{self.samba_password or ''}"
@@ -460,9 +516,9 @@ class BuffaloDHCPSyncApp:
         )
 
         # Samba parameters
-        self.samba_server = self.config.get("samba", "server", fallback="127.0.0.1")
+        self.samba_server = self.config.get("samba", "server", fallback="localhost")
         self.domain_zone = self.config.get("samba", "domain_zone", fallback="example.com")
-        self.auth_method = self.config.get("samba", "auth_method", fallback="kerberos")
+        self.auth_method = self.config.get("samba", "auth_method", fallback="machine_account")
         self.samba_user = self.config.get("samba", "user", fallback="Administrator")
         self.samba_pass = self.config.get("samba", "password", fallback="")
         self.keytab_path = self.config.get("samba", "keytab_path", fallback="/etc/krb5.keytab")

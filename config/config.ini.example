@@ -28,16 +28,19 @@ expect_script = /usr/local/bin/buffalo_fetch_dhcp.exp
 
 
 [samba]
-# Samba AD Domain Controller IP or hostname (127.0.0.1 if running on the DC itself)
-server = 127.0.0.1
+# Samba AD Domain Controller hostname or FQDN (e.g. localhost, livaz-gw-v6, or dc1.ad.example.com).
+# IMPORTANT: Do NOT use numeric IP addresses (like 127.0.0.1) because Kerberos SPN and RPC binding
+# require a hostname (otherwise NT_STATUS_INVALID_PARAMETER error occurs).
+server = localhost
 
 # Active Directory Forward DNS Zone name
 domain_zone = ad.corp.example.com
 
-# Authentication method: 'kerberos' or 'credentials'
-# - 'kerberos': uses Kerberos ticket cache or keytab file (recommended for security)
+# Authentication method: 'machine_account', 'kerberos', or 'credentials'
+# - 'machine_account': uses DC machine credentials (-P) when running locally on Samba DC as root (Recommended).
+# - 'kerberos': uses Kerberos ticket cache or keytab file via kinit.
 # - 'credentials': uses user and password with samba-tool -U
-auth_method = kerberos
+auth_method = machine_account
 
 # Samba AD Administrator username (used with 'credentials' or as default principal)
 user = Administrator
