@@ -32,7 +32,7 @@ from typing import Dict, List, Optional, Set, Tuple
 DHCP_LINE_PATTERN = re.compile(
     r"^\s*(?P<ip>\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+"
     r"(?P<mac>[0-9a-fA-F:.-]{11,17})\s+"
-    r"(?P<leasetime>[A-Za-z]{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})\s*$",
+    r"(?P<leasetime>[^#\r\n]+?)\s*(?:#.*)?$",
     re.MULTILINE,
 )
 
@@ -303,8 +303,12 @@ class SambaDNSManager:
         logger.info("Adding A record: %s.%s -> %s", hostname, self.domain_zone, ip_str)
         ret, out, err = self.run_samba_tool(["add", self.server, self.domain_zone, hostname, "A", ip_str])
         if ret != 0:
-            logger.error("Failed to add A record %s: %s %s", hostname, out.strip(), err.strip())
-            return False
+            combined_err = f"{out} {err}".lower()
+            if "already_exists" in combined_err or "already exists" in combined_err:
+                logger.info("A record %s already exists in DNS. Adopting into state.", hostname)
+            else:
+                logger.error("Failed to add A record %s: %s %s", hostname, out.strip(), err.strip())
+                return False
 
         if self.sync_ptr:
             self.add_ptr_record(hostname, ip_str)
@@ -357,8 +361,12 @@ class SambaDNSManager:
         logger.info("Adding PTR record: %s in %s -> %s", ptr_name, zone, fqdn)
         ret, out, err = self.run_samba_tool(["add", self.server, zone, ptr_name, "PTR", fqdn])
         if ret != 0:
-            logger.warning("Failed to add PTR record %s in %s: %s", ptr_name, zone, err.strip() or out.strip())
-            return False
+            combined_err = f"{out} {err}".lower()
+            if "already_exists" in combined_err or "already exists" in combined_err:
+                logger.debug("PTR record %s already exists in %s.", ptr_name, zone)
+            else:
+                logger.warning("Failed to add PTR record %s in %s: %s", ptr_name, zone, err.strip() or out.strip())
+                return False
         return True
 
     def delete_ptr_record(self, hostname: str, ip_str: str) -> bool:
@@ -693,6 +701,9 @@ class BuffaloDHCPSyncApp:
         # 4. Save state
         if not self.dry_run:
             self.state_manager.save()
+            logger.info("Saved %d active lease records to state file: %s", len(self.state_manager.state), self.state_file)
+        else:
+            logger.info("[DRY-RUN] Simulated state contains %d records. (state.json was NOT modified because --dry-run is active)", len(managed_leases))
 
         logger.info(
             "Sync cycle finished: %d added, %d updated, %d deleted.",
