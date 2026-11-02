@@ -161,40 +161,41 @@ if {!$in_privileged} {
     exit 6
 }
 
-# Step 5: Disable paging to ensure output is not interrupted by --More--
-log_debug "Sending 'terminal length 0'..."
-send -- "terminal length 0\r"
+# Step 5: Execute 'show ip dhcp binding'
+log_debug "Executing 'show ip dhcp binding'..."
+send -- "show ip dhcp binding\r"
+
+# First, wait for command echo to cleanly discard any preceding chars
 expect {
-    -re "$real_prompt" {
-        log_debug "Paging disabled successfully."
+    -re "show ip dhcp binding" {
+        # Echo consumed, now waiting for table output
     }
     timeout {
-        puts stderr "Timeout waiting after sending 'terminal length 0'."
+        puts stderr "Timeout waiting for 'show ip dhcp binding' echo."
         if {[info exists expect_out(buffer)]} {
             puts stderr "$expect_out(buffer)"
         }
         catch {close}
         catch {wait}
-        exit 7
+        exit 9
     }
     eof {
-        puts stderr "Connection dropped after 'terminal length 0'."
+        puts stderr "Connection dropped while executing 'show ip dhcp binding'."
         catch {wait}
-        exit 8
+        exit 10
     }
 }
 
-# Step 6: Execute 'show ip dhcp binding'
-log_debug "Executing 'show ip dhcp binding'..."
-send -- "show ip dhcp binding\r"
-
 set binding_output ""
 expect {
-    -re "show ip dhcp binding\[\r\n\]+(.*)$real_prompt" {
-        set binding_output $expect_out(1,string)
+    # Dynamically handle paging if output spans multiple screens
+    -nocase -re {(--More--|-- More --|\[More\])} {
+        log_debug "Detected paging prompt. Sending space to continue..."
+        send -- " "
+        exp_continue
     }
-    -re "$real_prompt" {
-        set binding_output $expect_out(buffer)
+    -re "(.*)$real_prompt" {
+        set binding_output $expect_out(1,string)
     }
     timeout {
         puts stderr "Timeout waiting for 'show ip dhcp binding' output."
@@ -214,7 +215,7 @@ expect {
 
 log_debug "Successfully received binding output ([string length $binding_output] bytes)."
 
-# Step 7: Disconnect gracefully
+# Step 6: Disconnect gracefully
 log_debug "Disconnecting cleanly with 'exit'..."
 send -- "exit\r"
 expect {

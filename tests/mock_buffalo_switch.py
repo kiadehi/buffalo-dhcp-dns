@@ -77,10 +77,7 @@ class MockBSG3024MRServer:
 
             # Privileged Mode
             conn.sendall(b"\r\nBS-G3024MR# ")
-            cmd2 = conn.recv(1024) # terminal length 0
-
-            conn.sendall(b"\r\nBS-G3024MR# ")
-            cmd3 = conn.recv(1024) # show ip dhcp binding
+            cmd2 = conn.recv(1024) # show ip dhcp binding
 
             # DHCP Lease Table Output
             output = (
