@@ -332,6 +332,13 @@ class SambaDNSManager:
 
         try:
             res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+            if res.returncode != 0:
+                combined_err = f"{res.stdout} {res.stderr}".lower()
+                if "3221225690" in combined_err or "set_machine_account" in combined_err:
+                    logger.error(
+                        "Machine account authentication (-P) failed with error 3221225690 on this Samba DC. "
+                        "Please configure 'auth_method = credentials' with administrator user and password in config.ini."
+                    )
             return res.returncode, res.stdout, res.stderr
         except Exception as e:
             logger.error("samba-tool execution failed: %s", e)
@@ -518,7 +525,7 @@ class BuffaloDHCPSyncApp:
         # Samba parameters
         self.samba_server = self.config.get("samba", "server", fallback="localhost")
         self.domain_zone = self.config.get("samba", "domain_zone", fallback="example.com")
-        self.auth_method = self.config.get("samba", "auth_method", fallback="machine_account")
+        self.auth_method = self.config.get("samba", "auth_method", fallback="credentials")
         self.samba_user = self.config.get("samba", "user", fallback="Administrator")
         self.samba_pass = self.config.get("samba", "password", fallback="")
         self.keytab_path = self.config.get("samba", "keytab_path", fallback="/etc/krb5.keytab")

@@ -36,19 +36,19 @@ server = localhost
 # Active Directory Forward DNS Zone name
 domain_zone = ad.corp.example.com
 
-# Authentication method: 'machine_account', 'kerberos', or 'credentials'
-# - 'machine_account': uses DC machine credentials (-P) when running locally on Samba DC as root (Recommended).
+# Authentication method: 'credentials' or 'kerberos'
+# - 'credentials': uses username and password via samba-tool -U (Recommended & most reliable on AD DC).
 # - 'kerberos': uses Kerberos ticket cache or keytab file via kinit.
-# - 'credentials': uses user and password with samba-tool -U
-auth_method = machine_account
+auth_method = credentials
 
 # Samba AD Administrator username (used with 'credentials' or as default principal)
 user = Administrator
 
-# Password (used ONLY when auth_method = credentials)
-password = 
+# Password (used when auth_method = credentials)
+# IMPORTANT: Protect /etc/buffalo-dhcp-dns/config.ini with 'chmod 600' so only root can read it.
+password = YourAdministratorPasswordHere
 
-# Path to Kerberos Keytab file (used when auth_method = kerberos)
+# Path to Kerberos Keytab file (used ONLY when auth_method = kerberos)
 keytab_path = /etc/krb5.keytab
 
 # Principal name in keytab (optional, defaults to Administrator@REALM)

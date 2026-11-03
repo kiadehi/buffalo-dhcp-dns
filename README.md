@@ -131,10 +131,10 @@ expect_script = /usr/local/bin/buffalo_fetch_dhcp.exp
 [samba]
 server = localhost             # Samba AD DC ホスト名（※127.0.0.1などのIP直打ちはKerberos SPN解決不可のため非推奨）
 domain_zone = corp.example.local    # Active Directory フォワード参照ゾーン
-auth_method = machine_account  # 'machine_account' (DC上でroot実行時に推奨), 'kerberos', 'credentials'
-user = Administrator           # 'credentials' 利用時またはデフォルトプリンシパル
-password =                     # 'credentials' 利用時のみ
-keytab_path = /etc/krb5.keytab # Kerberos keytab (auth_method=kerberos 時)
+auth_method = credentials      # 'credentials' (推奨・最も確実) または 'kerberos'
+user = Administrator           # Samba AD 管理者ユーザー名
+password = YourAdminPassword   # 管理者パスワード (config.ini は chmod 600 で保護してください)
+keytab_path = /etc/krb5.keytab # Kerberos keytab (auth_method=kerberos 時のみ)
 sync_ptr = true                # PTRレコードも同時に管理する場合 true
 
 [reverse_zones]
@@ -245,9 +245,10 @@ Expectスクリプト (`bin/buffalo_fetch_dhcp.exp`) は以下の状態遷移を
 | :--- | :--- | :--- |
 | `Timeout waiting for switch response` | スイッチ管理IPへのルーティング不可、またはFW遮断 | `telnet <switch_ip> 23` で手動疎通確認。timeout値を延ばす |
 | `Failed to reach privileged prompt` | メニューからCLIへ抜ける文字が異なる、またはプロンプト名が変更されている | スイッチに手動ログインしてプロンプト名を確認し、`config.ini` の `prompt` を修正 |
-| `NT_STATUS_INVALID_PARAMETER` / `Connecting to DNS RPC server failed` | `server` に `127.0.0.1` などのIPが指定されている（Kerberos/RPCはSPN解決のためホスト名が必要）、または認証未設定 | `config.ini` の `server = localhost` または DC ホスト名に変更。DC上で実行している場合は `auth_method = machine_account` を指定 |
+| `NT_STATUS_INVALID_PARAMETER` / `Connecting to DNS RPC server failed` | `server` に `127.0.0.1` などのIPが指定されている（Kerberos/RPCはSPN解決のためホスト名が必要） | `config.ini` の `server = localhost` または DC ホスト名に変更 |
+| `3221225690` / `set_machine_account` | Samba AD DC 上で `-P` (machine_account) 認証がサポートされていない環境 | `config.ini` で `auth_method = credentials` に設定し、`user = Administrator` と `password = パスワード` を指定 |
 | `WERR_DNS_ERROR_RECORD_DOES_NOT_EXIST` | 削除対象のレコードがDNS上に元々存在しない | 正常な動作です（警告ログとして記録され、Stateファイルから除去されます） |
-| `Kinit failed` または Kerberos エラー | keytab の期限切れ、時刻のズレ、プリンシパル不一致 | `ntpdate` や `chrony` でDCと時刻同期確認。`klist -k /etc/krb5.keytab` で確認。または `auth_method = machine_account` へ変更 |
+| `Kinit failed` または Kerberos エラー | keytab の期限切れ、時刻のズレ、プリンシパル不一致 | `ntpdate` や `chrony` でDCと時刻同期確認。または `auth_method = credentials` へ変更 |
 | 他プロセスが実行中と表示される | 前回の実行がロックを保持している | `/run/lock/buffalo-dhcp-dns.lock` の存在確認。異常終了時の残骸ならプロセス確認後削除 |
 
 ---
